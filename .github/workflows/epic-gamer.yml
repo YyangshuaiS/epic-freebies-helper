@@ -1,7 +1,12 @@
 name: Epic Awesome Gamer (Scheduled)
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch: # 手动触发（支持「只领取指定游戏」）
+    inputs:
+      targets:
+        description: '只领取这些：offer ID / namespace / 标题关键字，逗号分隔；留空则按原逻辑领取全部周免'
+        required: false
+        default: ''
   schedule:
     # 每周四 UTC 15:20 运行一次（北京时间周四 23:20）
     # 该时间点放在 Epic 周免刷新之后，避免过早触发。
@@ -90,6 +95,9 @@ jobs:
           ENABLE_APSCHEDULER: false
           MPLBACKEND: Agg
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🎯 按需领取（Hermes 集成补丁）：由 workflow_dispatch 的 targets 输入注入；
+          #    留空时保持上游原有行为（领取当周全部周免）
+          EPIC_TARGET_OFFERS: ${{ github.event.inputs.targets }}
           PYTHONPATH: app
         run: |
           echo "🚀 启动定时领取任务（支持 Gemini/AiHubMix/GLM）..."
