@@ -6,6 +6,7 @@
 
 import asyncio
 import json
+import os
 import re
 import time
 from contextlib import suppress
@@ -132,6 +133,24 @@ def get_promotions() -> List[PromotionGame]:
 
         logger.info(e["url"])
         promotions.append(PromotionGame(**e))
+
+    # 🎯 按需领取（Hermes 集成补丁）：仅当 EPIC_TARGET_OFFERS 非空时生效。
+    #    命中 offer ID / namespace / 标题 / 链接 slug 任一项即保留；留空时行为与上游完全一致（领取全部周免）。
+    targets_raw = (os.getenv("EPIC_TARGET_OFFERS") or "").strip()
+    if targets_raw:
+        wanted = {t.strip().lower() for t in re.split(r"[,;\r\n]+", targets_raw) if t.strip()}
+        kept = []
+        for p in promotions:
+            slug = (p.url or "").rstrip("/").rsplit("/", 1)[-1].lower()
+            keys = {str(p.id).lower(), str(p.namespace).lower(), (p.title or "").lower(), slug}
+            if keys & wanted:
+                kept.append(p)
+                logger.info(f"🎯 命中目标，将领取：{p.title}")
+            else:
+                logger.info(f"⏭️ 不在目标清单，跳过：{p.title}")
+        if not kept:
+            logger.warning(f"⚠️ EPIC_TARGET_OFFERS={targets_raw} 未命中任何周免，本次不领取任何游戏")
+        promotions = kept
 
     return promotions
 
