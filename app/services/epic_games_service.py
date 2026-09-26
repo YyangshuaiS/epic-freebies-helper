@@ -11,6 +11,7 @@ import re
 import time
 from contextlib import suppress
 from json import JSONDecodeError
+from pathlib import Path
 from typing import List
 
 import httpx
@@ -134,9 +135,21 @@ def get_promotions() -> List[PromotionGame]:
         logger.info(e["url"])
         promotions.append(PromotionGame(**e))
 
-    # 🎯 按需领取（Hermes 集成补丁）：仅当 EPIC_TARGET_OFFERS 非空时生效。
-    #    命中 offer ID / namespace / 标题 / 链接 slug 任一项即保留；留空时行为与上游完全一致（领取全部周免）。
+    # 🎯 按需领取（Hermes 集成补丁）：仅当有目标清单时生效。
+    #    目标来源优先级：环境变量 EPIC_TARGET_OFFERS > 仓库根目录的 hermes-targets.txt
+    #    （后者用于 token 无权修改 workflow 文件时，由服务器侧写文件触发）
+    #    命中 offer ID / namespace / 标题 / 链接 slug 任一项即保留；
+    #    两者都为空时行为与上游完全一致（领取全部周免）。
     targets_raw = (os.getenv("EPIC_TARGET_OFFERS") or "").strip()
+    if not targets_raw:
+        try:
+            _tf = Path(__file__).resolve().parents[2] / "hermes-targets.txt"
+            if _tf.is_file():
+                targets_raw = _tf.read_text(encoding="utf-8", errors="ignore").strip()
+                if targets_raw:
+                    logger.info(f"🎯 从 hermes-targets.txt 读取目标：{targets_raw[:200]}")
+        except Exception as _e:
+            logger.warning(f"读取 hermes-targets.txt 失败：{_e}")
     if targets_raw:
         wanted = {t.strip().lower() for t in re.split(r"[,;\r\n]+", targets_raw) if t.strip()}
         kept = []
