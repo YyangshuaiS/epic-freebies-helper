@@ -92,7 +92,13 @@ GLM_MULTI_TARGET_INSTRUCTION = (
 
 def _glm_thinking_payload(model: str, config: Any) -> dict[str, str] | None:
     """Keep GLM point-selection calls within hCaptcha response budgets."""
-    if not model.lower().startswith("glm-4.5"):
+    name = model.lower()
+    # Hermes 集成补丁：DeepSeek 是推理型模型，若不禁用思考会先把 token 预算烧在
+    # reasoning 上、导致 content 为空（实测 finish_reason=length / content 空）。
+    # 禁用思考后实测坐标精度同样达标，且 token 从 ~1800 降到 ~270。
+    if name.startswith("deepseek"):
+        return {"type": "disabled"}
+    if not name.startswith("glm-4.5"):
         return None
     if getattr(config, "thinking_config", None) is None:
         return None
