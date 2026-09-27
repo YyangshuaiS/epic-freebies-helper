@@ -239,6 +239,31 @@ def _extract_challenge_type(text: str) -> str | None:
     return None
 
 
+def _loose_challenge_type(value: Any) -> str | None:
+    """Hermes 集成补丁：从模型输出里宽松地抠出 challenge type。
+
+    背景：DeepSeek 等模型常把路由结果写成 {"type": "image_label_multi_select"}，
+    而 strict 的 _extract_challenge_type 只认“整段文本恰好等于某个已知类型”。
+    这里对大小写、连字符/空格、以及被包在 JSON 片段里的情况都做兜底。
+    """
+    if value is None:
+        return None
+    s = str(value).strip().strip('"').strip("'").strip()
+    if not s:
+        return None
+    exact = _extract_challenge_type(s)
+    if exact:
+        return exact
+    low = s.lower().replace("-", "_").replace(" ", "_")
+    for known in KNOWN_CHALLENGE_TYPES:
+        if low == known.lower():
+            return known
+    for known in sorted(KNOWN_CHALLENGE_TYPES, key=len, reverse=True):
+        if known.lower() in low:
+            return known
+    return None
+
+
 def _schema_enum_values(schema: Any, field_name: str) -> set[str]:
     if not (isinstance(schema, type) and issubclass(schema, BaseModel)):
         return set()
@@ -936,14 +961,26 @@ def _coerce_payload_for_schema(payload: dict[str, Any], schema: Any, text: str) 
             payload.get(challenge_type_field)
             or payload.get("challenge_type")
             or payload.get("request_type")
+            or payload.get("task_type")
+            or payload.get("type")          # Hermes 补丁：DeepSeek 常回 {"type": "..."}
+            or payload.get("challenge")
             or _extract_challenge_type(text)
-            or _extract_challenge_type(str(payload.get("answer") or ""))
+            or _loose_challenge_type(payload.get("type"))
+            or _loose_challenge_type(payload.get("answer"))
+            or _loose_challenge_type(text)
         )
         challenge_type = _coerce_challenge_type_for_schema(
             challenge_type, schema, challenge_type_field
         )
         if challenge_type:
-            normalized = {challenge_type_field: challenge_type}
+            # Hermes 补丁：schema 可能同时要求 challenge_type 与 request_type
+            # （ChallengeRouterResult），原实现只填一个字段 → pydantic 报 2 个 Field required。
+            # 这里把所有出现在 schema 里的同义字段一起填上。
+            normalized = {
+                _f: challenge_type
+                for _f in ("challenge_type", "request_type", "task_type", "type")
+                if _f in fields
+            } or {challenge_type_field: challenge_type}
             if "challenge_prompt" in fields:
                 normalized["challenge_prompt"] = challenge_prompt
             if "requester_question" in fields and challenge_prompt:
