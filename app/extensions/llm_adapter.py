@@ -1235,6 +1235,15 @@ class _GLMAsyncModels:
         headers = {
             "Authorization": f"Bearer {self._settings.GLM_API_KEY.get_secret_value()}",
             "Content-Type": "application/json",
+            # Hermes 集成补丁：部分 OpenAI 兼容中转（如 api.commandcode.ai）在 Cloudflare 后面，
+            # 会拦截 Python 默认 User-Agent（返回 403 error code: 1010）。
+            # 补上浏览器风格的头即可放行；对裸 OpenAI 端点无副作用。
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Origin": "https://commandcode.ai",
+            "Referer": "https://commandcode.ai/",
         }
 
         request_timeout = float(self._settings.GLM_REQUEST_TIMEOUT_SECONDS)
